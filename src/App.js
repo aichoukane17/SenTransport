@@ -5,23 +5,49 @@ import Header from './Header';
 import Recherche from './Recherche';
 import LigneBus from './LigneBus';
 import Footer from './Footer';
+import Carte from './Carte'; // Importation validée (Étape 7)
 
 function App() {
+  // ==========================================
+  // 1. Déclaration de tous les états (Lab 5)
+  // ==========================================
+  const [lignes, setLignes] = useState([]); 
+  const [chargement, setChargement] = useState(true);
+  const [erreur, setErreur] = useState(null);
   const [recherche, setRecherche] = useState("");
   const [ligneSelectionnee, setLigneSelectionnee] = useState(null);
   const [compteurRecherche, setCompteurRecherche] = useState(0);
 
-  const lignes = [
-    { id: 1, numero: "1", depart: "Parcelles Assainies", arrivee: "Plateau", arrets: 14, listeArrets: ["Parcelles U14", "Parcelles U10", "Camberene", "Patte d’Oie", "Grand Dakar", "Colobane", "Ponty", "Plateau"] },
-    { id: 2, numero: "7", depart: "Guediawaye", arrivee: "Place Obel", arrets: 18, listeArrets: ["Guediawaye", "Pikine", "Thiaroye", "Keur Massar", "Grand Yoff", "Parcelles", "Liberte 6", "Place Obel"] },
-    { id: 3, numero: "15", depart: "Pikine", arrivee: "Medina", arrets: 12, listeArrets: ["Pikine Centre", "Thiaroye Gare", "Hann", "Colobane", "Fass", "Medina"] },
-    { id: 4, numero: "23", depart: "Ouakam", arrivee: "Grand Dakar", arrets: 10, listeArrets: ["Ouakam Village", "Mermoz", "Fann", "Point E", "Liberte 5", "Grand Dakar"] },
-    { id: 5, numero: "8", depart: "Almadies", arrivee: "Colobane", arrets: 16, listeArrets: ["Almadies", "Ngor", "Yoff", "Ouest Foire", "Liberte 6", "Colobane"] },
-    { id: 6, numero: "12", depart: "Yoff", arrivee: "Sandaga", arrets: 11, listeArrets: ["Yoff Village", "Aeroport LSS", "Parcelles U17", "Grand Yoff", "HLM", "Sandaga"] }
-  ];
+  // ==========================================
+  // MODIFICATION EXO 1 : Fonction de chargement isolée
+  // ==========================================
+  const chargerDonnees = () => {
+    setChargement(true);
+    setErreur(null); 
+    
+    fetch("http://127.0.0.1:5000/lignes")
+      .then(response => {
+        if (!response.ok) {
+          throw new Error("Erreur serveur : " + response.status);
+        }
+        return response.json();
+      })
+      .then(data => {
+        setLignes(data);
+        setChargement(false);
+      })
+      .catch(error => {
+        setErreur(error.message);
+        setChargement(false);
+      });
+  };
 
-  // Logique du "Debounce" : 
-  // On attend que l'utilisateur arrête de taper pendant 800ms avant d'incrémenter le compteur
+  // 2. Charger les données au démarrage
+  useEffect(() => {
+    chargerDonnees();
+  }, []);
+
+  // Logique du "Debounce" (Lab 4)
   useEffect(() => {
     if (recherche === "") return;
 
@@ -36,21 +62,82 @@ function App() {
     setRecherche(valeur);
   };
 
+  // Filtrage dynamique des lignes
   const lignesFiltrees = lignes.filter(l =>
     l.depart.toLowerCase().includes(recherche.toLowerCase()) ||
     l.arrivee.toLowerCase().includes(recherche.toLowerCase()) ||
     l.numero.includes(recherche)
   );
 
+  // ==========================================
+  // MODIFICATION EXO 3 : Récupération par ID au clic
+  // ==========================================
   function handleClickLigne(ligne) {
-    setLigneSelectionnee(ligneSelectionnee && ligneSelectionnee.id === ligne.id ? null : ligne);
+    if (ligneSelectionnee && ligneSelectionnee.id === ligne.id) {
+      setLigneSelectionnee(null);
+      return;
+    }
+
+    fetch(`http://127.0.0.1:5000/lignes/${ligne.id}`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error("Impossible de charger les détails de cette ligne.");
+        }
+        return response.json();
+      })
+      .then(data => {
+        setLigneSelectionnee(data);
+      })
+      .catch(error => {
+        alert(error.message);
+      });
   }
 
+  // ==========================================
+  // Écrans conditionnels (Chargement / Erreur)
+  // ==========================================
+  if (chargement) {
+    return (
+      <div className="App">
+        <Header />
+        <main className="contenu">
+          <p className="message-chargement">Chargement des lignes...</p>
+        </main>
+      </div>
+    );
+  }
+
+  if (erreur) {
+    return (
+      <div className="App">
+        <Header />
+        <main className="contenu">
+          <div className="message-erreur">
+            <p>Impossible de charger les lignes.</p>
+            <p className="erreur-detail">{erreur}</p>
+            <p style={{ marginBottom: "15px" }}>Vérifiez que le serveur Flask est lancé (python api/app.py).</p>
+            <button onClick={chargerDonnees} className="bouton-recharger">
+              🔄 Tenter de recharger
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Écran normal rendu si (!chargement && !erreur)
   return (
     <div className="App">
       <Header />
       <main className="contenu">
         
+        {/* BOUTON RECHARGER (EXERCICE 1) */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '15px' }}>
+          <button onClick={chargerDonnees} className="bouton-recharger">
+            🔄 Recharger les données
+          </button>
+        </div>
+
         <p style={{ fontStyle: 'italic', color: '#666' }}>
           Vous avez effectué {compteurRecherche} recherche(s)
         </p>
@@ -85,14 +172,21 @@ function App() {
             depart={ligne.depart}
             arrivee={ligne.arrivee}
             arrets={ligne.arrets}
-            estSelectionnee={ligneSelectionnee && ligneSelectionnee.id === ligne.id}
+            estSelectionnee={ligneSelectionnee && ligneSelectionnee.id === Math.abs(ligne.id)}
             onClick={() => handleClickLigne(ligne)}
           />
         ))}
 
+        {/* Détails de la ligne sélectionnée */}
         {ligneSelectionnee && (
           <DetailLigne ligne={ligneSelectionnee} />
         )}
+
+        {/* ========================================== */}
+        {/* 🗺️ INTÉGRATION DE LA CARTE (Étape 7)         */}
+        {/* ========================================== */}
+        <Carte />
+
       </main>
       <Footer />
     </div>
