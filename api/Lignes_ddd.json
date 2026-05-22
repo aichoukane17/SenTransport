@@ -98,4 +98,21 @@
       "Sandaga"
     ]
   }
+  ,
+{
+  "id": 7,
+  "numero": "100",
+  "depart": "Guediawaye",
+  "arrivee": "ESP",
+  "arrets": 10,
+  "listeArrets": ["Arrêt 1", "Arrêt 2", "Arrêt 3"]
+},
+{
+  "id": 8,
+  "numero": "35",
+  "depart": "Pikine",
+  "arrivee": "Palais",
+  "arrets": 10,
+  "listeArrets": ["Terminus", "Poste", "Arrivée"]
+}
 ]

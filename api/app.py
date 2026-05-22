@@ -1,64 +1,87 @@
+import os
+import json
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import json
-import os
 
 app = Flask(__name__)
 CORS(app)
 
-# Chargement des données JSON sécurisé
-# (Prend en compte le renommage de ton fichier en lignes_ddd.json)
 base_dir = os.path.dirname(__file__)
-file_path = os.path.join(base_dir, "lignes_ddd.json")
 
-try:
-    with open(file_path, "r", encoding="utf-8") as f:
-        lignes = json.load(f)
-except FileNotFoundError:
-    # Sûreté au cas où le fichier n'est pas encore renommé
-    with open(os.path.join(base_dir, "Lignes_ddd.js"), "r", encoding="utf-8") as f:
-        lignes = json.load(f)
+# =====================================================================
+# FONCTION UTILITAIRE : Lecture dynamique du fichier lignes_ddd.json (Exo 2)
+# =====================================================================
+def charger_lignes_en_temps_reel():
+    file_path = os.path.join(base_dir, "lignes_ddd.json")
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        # Sûreté au cas où le fichier n'est pas renommé ou possède une autre extension
+        alt_path = os.path.join(base_dir, "Lignes_ddd.js")
+        if os.path.exists(alt_path):
+            with open(alt_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return []
 
+# =====================================================================
+# ROUTE D'ACCUEIL
+# =====================================================================
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({"message": "Bienvenue sur l'API SènTransport !"})
 
+# =====================================================================
+# LAB 5 - EXO 1 & 2 : Liste globale de toutes les lignes
+# =====================================================================
 @app.route('/lignes', methods=['GET'])
 def get_lignes():
+    lignes = charger_lignes_en_temps_reel()
     return jsonify(lignes)
 
+# =====================================================================
+# LAB 5 - EXO 3 : Détails d'une ligne spécifique via son ID au clic
+# =====================================================================
 @app.route('/lignes/<int:ligne_id>', methods=['GET'])
 def get_ligne(ligne_id):
-    # Recherche d'une ligne par son ID
+    lignes = charger_lignes_en_temps_reel()
+    # Recherche de la ligne par son identifiant unique
     ligne = next((l for l in lignes if l.get('id') == ligne_id), None)
+    
     if ligne is None:
         return jsonify({"erreur": "Ligne non trouvée"}), 404
     return jsonify(ligne)
 
-
 # =====================================================================
-# EXO 1 : Liste de tous les arrêts sans doublons
+# ROUTE /arrets : Fusion de l'étape géolocalisée et des arrêts uniques
 # =====================================================================
-@app.route('/arrets', methods=['GET'])
-def get_all_arrets():
-    # Un 'set' en Python supprime automatiquement les valeurs dupliquées
-    arrets_uniques = set()
+@app.route("/arrets", methods=['GET'])
+def get_arrets():
+    arrets_path = os.path.join(base_dir, "arrets.json")
     
-    # On parcourt chaque ligne de bus
+    # Si le fichier arrets.json existe (Étape 2 du nouveau module), on l'envoie directement
+    if os.path.exists(arrets_path):
+        with open(arrets_path, "r", encoding="utf-8") as f:
+            arrets_geolocalises = json.load(f)
+        return jsonify(arrets_geolocalises)
+    
+    # ANCIEN EXO 1 (Secours) : Extraction sans doublons depuis les lignes
+    lignes = charger_lignes_en_temps_reel()
+    arrets_uniques = set()
     for ligne in lignes:
-        # On récupère la liste des arrêts (si elle existe, sinon liste vide [])
-        for arret in ligne.get('listeArrets', []):
+        # Prise en compte de 'listeArrets' ou 'arrets' selon la structure du JSON
+        liste_arrets = ligne.get('listeArrets', ligne.get('arrets', []))
+        for arret in liste_arrets:
             arrets_uniques.add(arret)
             
-    # On convertit le set en liste classique pour pouvoir la renvoyer en JSON
     return jsonify(list(arrets_uniques))
 
-
 # =====================================================================
-# EXO 2 : Statistiques du réseau de transport
+# AUTRE EXO : Statistiques du réseau de transport
 # =====================================================================
 @app.route('/stats', methods=['GET'])
 def get_stats():
+    lignes = charger_lignes_en_temps_reel()
     total_lignes = len(lignes)
     total_arrets_cumules = 0
     
@@ -66,17 +89,14 @@ def get_stats():
     max_arrets_count = -1
 
     for ligne in lignes:
-        # On récupère le nombre d'arrêts de la ligne actuelle
-        nb_arrets_ligne = len(ligne.get('listeArrets', []))
+        liste_arrets = ligne.get('listeArrets', ligne.get('arrets', []))
+        nb_arrets_ligne = len(liste_arrets)
         
-        # Cumul pour la somme totale
         total_arrets_cumules += nb_arrets_ligne
         
-        # Recherche de la ligne qui a le plus d'arrêts
         if nb_arrets_ligne > max_arrets_count:
             max_arrets_count = nb_arrets_ligne
-            # On stocke le numéro/nom de la ligne
-            ligne_max_arrets = ligne.get('nom', ligne.get('id')) 
+            ligne_max_arrets = ligne.get('numero', ligne.get('id')) 
 
     return jsonify({
         "nombre_total_lignes": total_lignes,
@@ -84,29 +104,24 @@ def get_stats():
         "ligne_ayant_le_plus_d_arrets": ligne_max_arrets
     })
 
-
 # =====================================================================
-# EXO 3 : Recherche et filtrage de lignes par terminus (?q=...)
+# AUTRE EXO : Recherche et filtrage de lignes par terminus (?q=...)
 # =====================================================================
 @app.route('/lignes/recherche', methods=['GET'])
 def chercher_lignes():
-    # Récupération du paramètre d'URL 'q' (ex: ?q=Pikine), mis en minuscules
+    lignes = charger_lignes_en_temps_reel()
     query = request.args.get('q', '').lower()
-    
     lignes_trouvees = []
     
     for ligne in lignes:
-        # Extraction du départ et de l'arrivée en minuscules pour ignorer la casse
         depart = ligne.get('depart', '').lower()
-        arrivee = \
-        ligne.get('arrivee', '').lower()
+        arrivee = ligne.get('arrivee', '').lower()
         
-        # Si le mot recherché est présent dans le départ OU l'arrivée
         if query in depart or query in arrivee:
             lignes_trouvees.append(ligne)
             
     return jsonify(lignes_trouvees)
 
-
 if __name__ == "__main__":
+    # Lancement du serveur sur le port 5000 avec rechargement automatique
     app.run(debug=True, port=5000)
